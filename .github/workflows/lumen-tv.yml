@@ -1,0 +1,63 @@
+# Compile Lumen TV (APK Android TV) à chaque nouvel envoi de lumen.zip
+name: Lumen TV
+
+on:
+  push:
+    paths:
+      - 'lumen.zip'
+      - '.github/workflows/lumen-tv.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  apk:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Récupérer le dépôt
+        uses: actions/checkout@v4
+
+      - name: Décompresser le projet
+        run: unzip -q lumen.zip -d src
+
+      - name: Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 21
+
+      - name: Construire l'interface
+        working-directory: src/lumen
+        env:
+          ELECTRON_SKIP_BINARY_DOWNLOAD: '1'
+        run: |
+          npm ci --no-audit --no-fund
+          npx vite build
+          npx cap sync android
+
+      - name: Construire l'APK
+        working-directory: src/lumen/android
+        run: |
+          chmod +x gradlew
+          ./gradlew assembleRelease --no-daemon --stacktrace -PlumenVersionCode=${{ github.run_number }} -PlumenVersionName=0.9.${{ github.run_number }}
+          cp app/build/outputs/apk/release/app-release.apk "$GITHUB_WORKSPACE/lumen-tv.apk"
+
+      - name: Garder l'APK (onglet Actions)
+        uses: actions/upload-artifact@v4
+        with:
+          name: lumen-tv
+          path: lumen-tv.apk
+
+      - name: Publier l'APK (lien de téléchargement fixe)
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: tv-${{ github.run_number }}
+          name: Lumen TV 0.9.${{ github.run_number }}
+          files: lumen-tv.apk
+          make_latest: true
